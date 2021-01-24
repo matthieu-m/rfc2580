@@ -1,10 +1,10 @@
 [package]
 name = "rfc2580"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Matthieu M. <matthieum.147192@gmail.com>"]
 edition = "2018"
 description = "An (enhanced) implementation of RFC 2580"
 repository = "https://github.com/matthieu-m/rfc2580"
 license = "MIT OR Apache-2.0"
 keywords = ["experimental", "fat-pointer", "nightly", "no-std", "rfc"]
-categories = ["rfc", "tracer-bullet"]
+categories = ["no-std"]
