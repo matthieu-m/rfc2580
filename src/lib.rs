@@ -51,7 +51,7 @@
 //! assert_eq!(slice as *const [i32], reconstituted);
 //! ```
 
-use core::{marker::PhantomData, mem, ptr, raw::TraitObject};
+use core::{marker::PhantomData, mem, raw::TraitObject};
 
 /// SizedMetaData.
 ///
@@ -156,35 +156,6 @@ impl<T> MetaData for SizedMetaData<T> {
     fn disassemble(ptr: *const T) -> (Self, *const u8) {
         (SizedMetaData(PhantomData), ptr as *const u8)
     }
-}
-
-
-/// AlignedMetaData.
-///
-/// A trait extending meta-data with a method to obtain the alignment of the pointer to data; useful for `ThinBox`.
-///
-/// Note: with access to the meta-data in the v-table, it would be possible to obtain the size, and thus the full
-/// `Layout`.
-pub trait AlignedMetaData: MetaData {
-    /// The alignment of the corresponding pointer to data.
-    fn align(&self) -> usize;
-}
-
-impl<T: ?Sized> AlignedMetaData for DynMetaData<T> {
-    fn align(&self) -> usize {
-        let null = self.assemble(ptr::null());
-        //  Safety:
-        //  -   Assumes that align_of_val doesn't actually access the data pointer.
-        unsafe { mem::align_of_val(&*null) }
-    }
-}
-
-impl<T> AlignedMetaData for SliceMetaData<T> {
-    fn align(&self) -> usize { mem::align_of::<T>() }
-}
-
-impl<T> AlignedMetaData for SizedMetaData<T> {
-    fn align(&self) -> usize { mem::align_of::<T>() }
 }
 
 

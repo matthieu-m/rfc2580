@@ -1,6 +1,6 @@
 [package]
 name = "rfc2580"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Matthieu M. <matthieum.147192@gmail.com>"]
 edition = "2018"
 description = "An (enhanced) implementation of RFC 2580"
