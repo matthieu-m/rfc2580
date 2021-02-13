@@ -42,16 +42,16 @@
 //! ```
 //! use rfc2580::{from_raw_parts, into_raw_parts};
 //!
-//! let array = [1; 4];
-//! let slice = &array[..];
-//! let (meta, data) = into_raw_parts(slice as *const [i32]);
+//! let mut array = [1; 4];
+//! let slice = &mut array[..];
+//! let (meta, data) = into_raw_parts(slice as *mut [i32]);
 //!
 //! let reconstituted = from_raw_parts(meta, data);
 //!
-//! assert_eq!(slice as *const [i32], reconstituted);
+//! assert_eq!(slice as *mut [i32], reconstituted);
 //! ```
 
-use core::{marker::PhantomData, mem, raw::TraitObject};
+use core::{marker::PhantomData, mem, ptr::NonNull, raw::TraitObject};
 
 /// SizedMetaData.
 ///
@@ -100,29 +100,29 @@ pub trait MetaData: Sized {
     type Pointee : ?Sized;
 
     /// Joins a meta-data and data-pointer parts into a pointer to the appropriate type.
-    fn assemble(&self, data: *const u8) -> *const Self::Pointee;
+    fn assemble(&self, data: *mut u8) -> *mut Self::Pointee;
 
     /// Splits any pointer into its meta-data and data-pointer parts.
-    fn disassemble(ptr: *const Self::Pointee) -> (Self, *const u8);
+    fn disassemble(ptr: *mut Self::Pointee) -> (Self, *mut u8);
 }
 
 impl<T: ?Sized> MetaData for DynMetaData<T> {
     type Pointee = T;
 
-    fn assemble(&self, data: *const u8) -> *const T {
-        assert!(mem::size_of::<*const T>() == mem::size_of::<TraitObject>());
+    fn assemble(&self, data: *mut u8) -> *mut T {
+        assert!(mem::size_of::<*mut T>() == mem::size_of::<TraitObject>());
 
         let object = TraitObject { data: data as *mut (), vtable: self.0 as *mut () };
 
         unsafe { mem::transmute_copy(&object) }
     }
 
-    fn disassemble(ptr: *const T) -> (Self, *const u8) {
-        assert!(mem::size_of::<*const T>() == mem::size_of::<(usize, usize)>());
+    fn disassemble(ptr: *mut T) -> (Self, *mut u8) {
+        assert!(mem::size_of::<*mut T>() == mem::size_of::<(usize, usize)>());
 
         let object: TraitObject = unsafe { mem::transmute_copy(&ptr) };
 
-        (DynMetaData(object.vtable, PhantomData), object.data as *const u8)
+        (DynMetaData(object.vtable, PhantomData), object.data as *mut u8)
     }
 }
 
@@ -131,30 +131,30 @@ impl<T: ?Sized> MetaData for DynMetaData<T> {
 impl<T> MetaData for SliceMetaData<T> {
     type Pointee = [T];
 
-    fn assemble(&self, data: *const u8) -> *const [T] {
-        debug_assert!(mem::size_of::<*const [T]>() == mem::size_of::<(usize, usize)>());
+    fn assemble(&self, data: *mut u8) -> *mut [T] {
+        debug_assert!(mem::size_of::<*mut [T]>() == mem::size_of::<(usize, usize)>());
 
         unsafe { mem::transmute_copy(&(data, self.0)) }
     }
 
-    fn disassemble(ptr: *const [T]) -> (Self, *const u8) {
-        debug_assert!(mem::size_of::<*const [T]>() == mem::size_of::<(usize, usize)>());
+    fn disassemble(ptr: *mut [T]) -> (Self, *mut u8) {
+        debug_assert!(mem::size_of::<*mut [T]>() == mem::size_of::<(usize, usize)>());
 
         let (data, len): (usize, usize) = unsafe { mem::transmute_copy(&ptr) };
 
-        (SliceMetaData(len, PhantomData), data as *const u8)
+        (SliceMetaData(len, PhantomData), data as *mut u8)
     }
 }
 
 impl<T> MetaData for SizedMetaData<T> {
     type Pointee = T;
 
-    fn assemble(&self, data: *const u8) -> *const T {
-        data as *const T
+    fn assemble(&self, data: *mut u8) -> *mut T {
+        data as *mut T
     }
 
-    fn disassemble(ptr: *const T) -> (Self, *const u8) {
-        (SizedMetaData(PhantomData), ptr as *const u8)
+    fn disassemble(ptr: *mut T) -> (Self, *mut u8) {
+        (SizedMetaData(PhantomData), ptr as *mut u8)
     }
 }
 
@@ -182,6 +182,8 @@ impl<T> Pointee for T {
 
 /// Splits any pointer into its meta-data and data-pointer parts.
 ///
+/// For the `NonNull` equivalent, see `into_non_null_parts`.
+///
 /// #   Examples
 ///
 /// ```
@@ -189,16 +191,18 @@ impl<T> Pointee for T {
 ///
 /// let array = [1; 4];
 /// let slice = &array[..];
-/// let (meta, data) = into_raw_parts(slice as *const [i32]);
+/// let (meta, data) = into_raw_parts(slice as *const [i32] as *mut [i32]);
 ///
-/// assert_eq!(slice.as_ptr() as *const u8, data);
+/// assert_eq!(slice.as_ptr() as *mut u8, data);
 /// ```
-pub fn into_raw_parts<T: ?Sized + Pointee>(ptr: *const T) -> (<T as Pointee>::MetaData, *const u8) {
+pub fn into_raw_parts<T: ?Sized + Pointee>(ptr: *mut T) -> (<T as Pointee>::MetaData, *mut u8) {
     <T as Pointee>::MetaData::disassemble(ptr)
 }
 
 
 /// Joins a meta-data and data-pointer parts into a pointer to the appropriate type.
+///
+/// For the `NonNull` equivalent, see `from_non_null_parts`.
 ///
 /// #   Examples
 ///
@@ -207,14 +211,61 @@ pub fn into_raw_parts<T: ?Sized + Pointee>(ptr: *const T) -> (<T as Pointee>::Me
 ///
 /// let array = [1; 4];
 /// let slice = &array[..];
-/// let (meta, data) = into_raw_parts(slice as *const [i32]);
+/// let (meta, data) = into_raw_parts(slice as *const [i32] as *mut [i32]);
 ///
 /// let reconstituted = from_raw_parts(meta, data);
 ///
-/// assert_eq!(slice as *const [i32], reconstituted);
+/// assert_eq!(slice as *const [i32] as *mut [i32], reconstituted);
 /// ```
-pub fn from_raw_parts<T: ?Sized, M: MetaData<Pointee = T>>(meta: M, ptr: *const u8) -> *const T {
+pub fn from_raw_parts<T: ?Sized, M: MetaData<Pointee = T>>(meta: M, ptr: *mut u8) -> *mut T {
     meta.assemble(ptr)
+}
+
+
+/// Splits any pointer into its meta-data and data-pointer parts.
+///
+/// For the raw pointer equivalent, see `into_raw_parts`.
+///
+/// #   Examples
+///
+/// ```
+/// use core::ptr::NonNull;
+/// use rfc2580::into_non_null_parts;
+///
+/// let mut array = [1; 4];
+/// let (meta, data) = into_non_null_parts(NonNull::from(&mut array[..]));
+///
+/// assert_eq!(NonNull::from(&mut array[..]).cast(), data);
+/// ```
+pub fn into_non_null_parts<T: ?Sized + Pointee>(ptr: NonNull<T>) -> (<T as Pointee>::MetaData, NonNull<u8>) {
+    let (meta, ptr) = into_raw_parts(ptr.as_ptr());
+    //  Safety:
+    //  -   `ptr` is non-null, hence the result is non-null.
+    (meta, unsafe { NonNull::new_unchecked(ptr) })
+}
+
+
+/// Joins a meta-data and data-pointer parts into a pointer to the appropriate type.
+///
+/// For the raw pointer equivalent, see `from_raw_parts`.
+///
+/// #   Examples
+///
+/// ```
+/// use core::ptr::NonNull;
+/// use rfc2580::{from_non_null_parts, into_non_null_parts};
+///
+/// let mut array = [1; 4];
+/// let (meta, data) = into_non_null_parts(NonNull::from(&mut array[..]));
+///
+/// let reconstituted = from_non_null_parts(meta, data);
+///
+/// assert_eq!(NonNull::from(&mut array[..]), reconstituted);
+/// ```
+pub fn from_non_null_parts<T: ?Sized, M: MetaData<Pointee = T>>(meta: M, ptr: NonNull<u8>) -> NonNull<T> {
+    //  Safety:
+    //  -   `ptr` is non-null, hence the result is non-null.
+    unsafe { NonNull::new_unchecked(from_raw_parts(meta, ptr.as_ptr())) }
 }
 
 
@@ -230,12 +281,12 @@ const SIZE_OF_USIZE: usize = mem::size_of::<usize>();
 #[test]
 fn split_join_sized() {
     let item = 42i32;
-    let ptr = &item as *const _;
+    let ptr = &item as *const _ as *mut _;
 
     let (meta, data) = into_raw_parts(ptr);
 
     assert_eq!(0, mem::size_of_val(&meta));
-    assert_eq!(ptr, data as *const i32);
+    assert_eq!(ptr, data as *mut i32);
 
     let phoenix = from_raw_parts(meta, data);
 
@@ -246,12 +297,12 @@ fn split_join_sized() {
 fn split_join_slice() {
     let array = [1, 2, 3, 4];
     let slice = &array[..];
-    let ptr = slice as *const [i32];
+    let ptr = slice as *const [i32] as *mut [i32];
 
     let (meta, data) = into_raw_parts(ptr);
 
     assert_eq!(SIZE_OF_USIZE, mem::size_of_val(&meta));
-    assert_eq!(slice.as_ptr(), data as *const i32);
+    assert_eq!(slice.as_ptr(), data as *mut i32);
 
     let phoenix = from_raw_parts(meta, data);
 
@@ -262,7 +313,7 @@ fn split_join_slice() {
 fn split_join_trait() {
     let item = 42i32;
     let debug = &item as &dyn Debug;
-    let ptr = debug as *const dyn Debug;
+    let ptr = debug as *const dyn Debug as *mut dyn Debug;
 
     let (meta, data) = into_raw_parts(ptr);
 

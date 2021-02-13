@@ -26,18 +26,18 @@ pub struct ThinBox<T: ?Sized + Pointee> {
 }
 
 impl<T: Pointee> ThinBox<T> {
-    pub fn new(value: T) -> Self {
-        let meta = rfc2580::into_raw_parts(&value as *const T).0;
+    pub fn new(mut value: T) -> Self {
+        let meta = rfc2580::into_non_null_parts(NonNull::from(&mut value)).0;
         let ptr = WithHeader::new(meta, value).expect("No allocation failure");
         ThinBox { ptr, _marker: PhantomData }
     }
 }
 
 impl<T: ?Sized + Pointee> ThinBox<T> {
-    pub fn new_unsize<S>(value: S) -> Self
+    pub fn new_unsize<S>(mut value: S) -> Self
         where S: Unsize<T>
     {
-        let meta = rfc2580::into_raw_parts(&value as &T as *const T).0;
+        let meta = rfc2580::into_non_null_parts(NonNull::from(&mut value as &mut T)).0;
         let ptr = WithHeader::new(meta, value).expect("No allocation failure");
         ThinBox { ptr, _marker: PhantomData }
     }
@@ -53,19 +53,15 @@ impl<T: ?Sized + Pointee> Deref for ThinBox<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        let pointer = rfc2580::from_raw_parts(self.meta(), self.data());
-        unsafe {
-            &*pointer
-        }
+        let pointer = rfc2580::from_non_null_parts(self.meta(), self.data());
+        unsafe { &*pointer.as_ptr() }
     }
 }
 
 impl<T: ?Sized + Pointee> DerefMut for ThinBox<T> {
     fn deref_mut(&mut self) -> &mut T {
-        let pointer = rfc2580::from_raw_parts(self.meta(), self.data()) as *mut T;
-        unsafe {
-            &mut *pointer
-        }
+        let pointer = rfc2580::from_non_null_parts(self.meta(), self.data());
+        unsafe { &mut *pointer.as_ptr() }
     }
 }
 
@@ -89,7 +85,7 @@ impl<T: ?Sized + Pointee> ThinBox<T> {
         unsafe { *self.ptr.header().as_ptr() }
     }
 
-    fn data(&self) -> *const u8 { self.ptr.value().as_ptr() as *const u8 }
+    fn data(&self) -> NonNull<u8> { self.ptr.value() }
 }
 
 struct WithHeader<H>(NonNull<u8>, PhantomData<H>);
